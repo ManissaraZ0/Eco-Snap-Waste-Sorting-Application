@@ -39,7 +39,7 @@ cd eco-snap
 The application requires an active Vision Language Model running via Ollama.
 Download the Model: Pull the required model (e.g., Qwen 2.5-VL) using the terminal:
 ```
-ollama pull qwen2:7b-chat-vlm-q8_0
+ollama pull qwen2.5vl:lastest
 ```
 Start the Ollama Server: Run the Ollama server in a separate terminal window. The application communicates with this API.
 ```
