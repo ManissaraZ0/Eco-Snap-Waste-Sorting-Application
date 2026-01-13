@@ -4,6 +4,7 @@ An intelligent, cross-platform mobile application that simplifies accurate waste
 # 🌟 Project Overview
 Eco Snap is designed to eliminate the confusion of waste separation. Developed with Flutter, it provides a seamless user experience while leveraging powerful Large Vision Models (LVMs) to instantly categorize waste, turning a daily chore into an impactful, trackable action.
 
+## Demo Application
 [![Demo Application](https://img.youtube.com/vi/YwNOcrpJMGc/0.jpg)](https://www.youtube.com/watch?v=YwNOcrpJMGc)
 
 # ✨ Key Features
