@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+// import 'dart:io';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -20,14 +21,15 @@ class CameraPage extends StatefulWidget {
 }
 
 class _CameraPageState extends State<CameraPage> {
-  File? _imageFile;
+  // File? _imageFile;
+  XFile? _imageFile;
   bool _isLoading = false;
   Map<String, dynamic>? _result;
   String? _error;
 
   final ImagePicker _picker = ImagePicker();
 
-  final String ollamaUrl = 'http://192.168.1.8:11434/api/generate';
+  // final String ollamaUrl = 'http://192.168.1.8:11434/api/generate';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -84,7 +86,7 @@ class _CameraPageState extends State<CameraPage> {
 
       if (image != null) {
         setState(() {
-          _imageFile = File(image.path);
+          _imageFile = image;
           _result = null;
           _error = null;
         });
@@ -107,140 +109,92 @@ class _CameraPageState extends State<CameraPage> {
     });
 
     try {
-      // อ่านไฟล์รูปเป็น base64
+      // อ่านรูปเป็น bytes แล้วแปลง base64
       List<int> imageBytes = await _imageFile!.readAsBytes();
       String base64Image = base64Encode(imageBytes);
 
-      String prompt = """
-คุณคือผู้เชี่ยวชาญด้านการแยกขยะตามมาตรฐานถังขยะ 4 ประเภทของประเทศไทย ให้คุณวิเคราะห์ภาพของวัตถุและจัดประเภทขยะตามเกณฑ์ดังนี้:
+      // URL backend Vercel
+      final String apiUrl = 'https://trash-ai-backend.vercel.app/api/classify';
 
-1. อินทรีย์ เช่น เศษอาหาร, ใบไม้, เปลือกผลไม้, เศษพืช
-2. รีไซเคิล เช่น กระดาษ, ขวดพลาสติก, ขวดแก้ว, กระป๋อง, กล่อง, วัสดุที่สามารถรีไซเคิลได้
-3. ทั่วไป เช่น ซองขนม, โฟม, พลาสติกเลอะอาหาร, ของที่รีไซเคิลไม่ได้
-4. อันตราย เช่น แบตเตอรี่, หลอดไฟ, สารเคมี, เข็ม, ขวดยา/วิตามิน
-
-กติกาการตอบ:
-1. วิเคราะห์วัตถุในภาพ
-2. ตัดสินให้เป็นเพียง 1 ถังเท่านั้น
-3. ตอบในรูปแบบ JSON ที่ strict และไม่มีข้อความอื่น เช่น:
-{
- "type": "รีไซเคิล",
- "reason": "เป็นขวดพลาสติก PET ที่สามารถนำไปรีไซเคิลได้",
-}
-
-ถ้ามองไม่เห็นวัตถุ:
-{"type": "ไม่ทราบประเภท", "reason": "ขออภัย ไม่สามารถระบุวัตถุในภาพได้"}
-
-""";
-
-      // เรียก Ollama API
       final response = await http
           .post(
-            Uri.parse(ollamaUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              "model": "qwen2.5vl:latest",
-              "prompt": prompt,
-              "images": [base64Image],
-              "stream": true,
-              "format": "json",
-              "options": {"temperature": 0},
-            }),
+            Uri.parse(apiUrl),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"image": "data:image/jpeg;base64,$base64Image"}),
           )
           .timeout(
-            const Duration(seconds: 120),
+            const Duration(seconds: 60),
             onTimeout: () {
-              throw TimeoutException('Ollama ตอบช้าเกินไป');
+              throw TimeoutException("ประมวลผลช้าเกินไป");
             },
           );
 
       if (response.statusCode == 200) {
-        // แยกเป็นบรรทัด
-        final lines = response.body.split('\n');
+        final data = jsonDecode(response.body);
+        debugPrint("RAW RESPONSE: ${response.body}");
 
-        // เก็บเฉพาะ content ใน field "response"
-        final buffer = StringBuffer();
-
-        for (var line in lines) {
-          if (line.trim().isEmpty) continue;
-
-          try {
-            final obj = jsonDecode(line);
-            if (obj["response"] != null) {
-              buffer.write(obj["response"]);
-            }
-          } catch (_) {
-            // ignore lines that are not valid JSON
-          }
+        if (data == null) {
+          throw Exception("ไม่มี response จาก server");
         }
 
-        final raw = buffer.toString();
-
-        if (raw.isEmpty) {
-          throw FormatException("ไม่มีข้อมูล response ให้ decode");
+        // เช็ค error จาก server
+        if (data["error"] != null) {
+          throw Exception(data["error"]);
         }
 
-        debugPrint("RAW CLEANED: $raw");
+        // ดึง text จาก Vercel AI Gateway
+        final text = data["text"];
 
-        // ดึงเฉพาะ JSON ที่อยู่ในข้อความ
-        final jsonString = RegExp(
-          r'\{.*\}',
-          dotAll: true,
-        ).firstMatch(raw)?.group(0);
+        if (text == null || text.isEmpty) {
+          throw Exception("ไม่มีผลลัพธ์จาก AI");
+        }
+
+        // ดึง JSON จากข้อความตอบกลับ
+        final jsonString = RegExp(r'\{[\s\S]*\}').firstMatch(text)?.group(0);
 
         if (jsonString == null) {
-          throw FormatException("ไม่พบ JSON ในผลลัพธ์:\n$raw");
+          throw FormatException("ไม่พบ JSON ในผลลัพธ์\n$text");
         }
 
         final result = jsonDecode(jsonString);
 
-        result.updateAll((key, value) {
-          if (value is String) {
-            return fixEncoding(value);
-          }
-          return value;
-        });
+        String type = result["type"] ?? "";
+        String reason = result["reason"] ?? "";
+        String color = "";
 
-        String type = result['type'] ?? '';
-        String reason = result['reason'] ?? '';
-        String color = result['color'] ?? '';
-
-        if (type == 'อันตราย') {
-          color = 'แดง';
-        } else if (type == 'อินทรีย์') {
-          color = 'เขียว';
-        } else if (type == 'รีไซเคิล') {
-          color = 'เหลือง';
-        } else if (type == 'ทั่วไป') {
-          color = 'น้ำเงิน';
-        } else if (type == 'ไม่ทราบประเภท') {
-          color = 'เทา';
+        if (type == "อันตราย") {
+          color = "แดง";
+        } else if (type == "อินทรีย์") {
+          color = "เขียว";
+        } else if (type == "รีไซเคิล") {
+          color = "เหลือง";
+        } else if (type == "ทั่วไป") {
+          color = "น้ำเงิน";
+        } else {
+          color = "เทา";
         }
 
-        result['type'] = type;
-        result['color'] = color;
-        result['reason'] = reason;
+        result["type"] = type;
+        result["reason"] = reason;
+        result["color"] = color;
 
         setState(() {
           _result = result;
           _isLoading = false;
         });
       } else {
-        throw Exception('Ollama error: ${response.statusCode}');
+        throw Exception(
+          "Server error ${response.statusCode}\n${response.body}",
+        );
       }
-    } on SocketException {
-      setState(() {
-        _error = 'ไม่สามารถเชื่อมต่อ Ollama';
-        _isLoading = false;
-      });
     } on TimeoutException {
       setState(() {
-        _error = 'ประมวลผลช้าเกินไป';
+        _error = "ใช้เวลาประมวลผลนานเกินไป";
         _isLoading = false;
       });
     } catch (e) {
       setState(() {
-        _error = 'เกิดข้อผิดพลาด: $e';
+        _error = "เกิดข้อผิดพลาด: $e";
         _isLoading = false;
       });
     }
@@ -469,7 +423,10 @@ class _CameraPageState extends State<CameraPage> {
                 child: _imageFile != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: Image.file(_imageFile!, fit: BoxFit.contain),
+                        child: Image.network(
+                          _imageFile!.path,
+                          fit: BoxFit.contain,
+                        ),
                       )
                     : Center(
                         child: Column(

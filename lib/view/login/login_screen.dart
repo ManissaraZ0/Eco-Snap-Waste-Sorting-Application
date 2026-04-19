@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 40),
 
                   Text(
-                    "ยินดีต้อนรับสู่ Eco Snap",
+                    "ยินดีต้อนรับสู่ Yaek Dee",
                     style: TextStyle(
                       color: TColor.primaryText,
                       fontSize: 32,

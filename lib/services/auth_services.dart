@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -84,30 +85,44 @@ class AuthService {
   // ---------------------------
   Future<Map<String, dynamic>> signInWithGoogle() async {
     try {
-      if (await _googleSignIn.isSignedIn()) {
-        await _googleSignIn.signOut();
+      UserCredential result;
+
+      if (kIsWeb) {
+        // 🌐 WEB
+        GoogleAuthProvider googleProvider = GoogleAuthProvider();
+
+        result = await _auth.signInWithPopup(googleProvider);
+      } else {
+        // 📱 MOBILE (Android / iOS)
+        if (await _googleSignIn.isSignedIn()) {
+          await _googleSignIn.signOut();
+        }
+
+        final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+        if (googleUser == null) {
+          return {'success': false, 'message': 'Google sign-in cancelled'};
+        }
+
+        final googleAuth = await googleUser.authentication;
+
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        result = await _auth.signInWithCredential(credential);
       }
 
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        return {'success': false, 'message': 'Google sign-in cancelled'};
-      }
-
-      final googleAuth = await googleUser.authentication;
-
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      UserCredential result = await _auth.signInWithCredential(credential);
       final user = result.user!;
 
-      // ⭐ สร้างเอกสารใน Firestore หากยังไม่มี
+      // ⭐ Firestore (เหมือนเดิม)
       final userDoc = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid);
+
       final docSnapshot = await userDoc.get();
+
       if (!docSnapshot.exists) {
         await userDoc.set({
           'uid': user.uid,
@@ -126,8 +141,8 @@ class AuthService {
       };
     } on FirebaseAuthException catch (e) {
       return {'success': false, 'message': _getErrorMessage(e.code)};
-    } on PlatformException catch (e) {
-      return {'success': false, 'message': 'Platform error: ${e.message}'};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
     }
   }
 
